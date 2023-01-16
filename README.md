@@ -1,2 +1,2 @@
-# NIM-System-PowerShell-Microsoft-SQL-Queries
-Microsoft SQL Server, alternative version to use custom queries
+# NIM-System-PowerShell-Microsoft-SQL
+Microsoft SQL Server
