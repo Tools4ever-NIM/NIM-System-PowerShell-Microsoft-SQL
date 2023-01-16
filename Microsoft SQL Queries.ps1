@@ -458,8 +458,6 @@ function Idm-Dispatcher {
 
             Open-MsSqlConnection $SystemParams
 
-            Log debug "MY CLASS NAME IS $($class)"
-
             for (($i = 0), ($j = 0); $i -lt 21; $i++)
             {
                 if($connection_params."table_$($i)_name" -eq $class)
@@ -618,16 +616,12 @@ function Invoke-MsSqlCommand {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
         )
-        Log debug "Start ExecuteReader"
         $data_reader = $SqlCommand.ExecuteReader()
-        Log debug "Done ExecuteReader"
-        Log debug "Start GetSchemaTable"
         $column_names = @($data_reader.GetSchemaTable().ColumnName)
-        Log debug "Done GetSchemaTable"
+
         if ($column_names) {
 
             # Read data
-            Log debug "Start While"
             while ($data_reader.Read()) {
                 $hash_table = [ordered]@{}
 
@@ -636,13 +630,11 @@ function Invoke-MsSqlCommand {
                 }
 
                 # Output data
-                New-Object -TypeName PSObject -Property $hash_table
+                [PSCustomObject]$hash_table
             }
-            Log debug "End While"
         }
 
         $data_reader.Close()
-        Log debug "Close DataReader"
     }
 
     # Streaming
