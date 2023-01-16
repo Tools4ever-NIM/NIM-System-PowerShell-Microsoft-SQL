@@ -202,6 +202,126 @@ function Idm-SystemInfo {
                 label = 'Query 10 - SQL Statement'
                 description = ''
             }
+            @{
+                name = 'table_11_name'
+                type = 'textbox'
+                label = 'Query 11 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_11_query'
+                type = 'textbox'
+                label = 'Query 11 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_12_name'
+                type = 'textbox'
+                label = 'Query 12 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_12_query'
+                type = 'textbox'
+                label = 'Query 12 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_13_name'
+                type = 'textbox'
+                label = 'Query 13 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_13_query'
+                type = 'textbox'
+                label = 'Query 13 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_14_name'
+                type = 'textbox'
+                label = 'Query 14 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_14_query'
+                type = 'textbox'
+                label = 'Query 14 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_15_name'
+                type = 'textbox'
+                label = 'Query 15 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_15_query'
+                type = 'textbox'
+                label = 'Query 15 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_16_name'
+                type = 'textbox'
+                label = 'Query 16 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_16_query'
+                type = 'textbox'
+                label = 'Query 16 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_17_name'
+                type = 'textbox'
+                label = 'Query 17 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_17_query'
+                type = 'textbox'
+                label = 'Query 17 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_18_name'
+                type = 'textbox'
+                label = 'Query 18 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_18_query'
+                type = 'textbox'
+                label = 'Query 18 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_19_name'
+                type = 'textbox'
+                label = 'Query 19 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_19_query'
+                type = 'textbox'
+                label = 'Query 19 - SQL Statement'
+                description = ''
+            }
+            @{
+                name = 'table_20_name'
+                type = 'textbox'
+                label = 'Query 20 - Name of Table'
+                description = ''
+            }
+            @{
+                name = 'table_20_query'
+                type = 'textbox'
+                label = 'Query 20 - SQL Statement'
+                description = ''
+            }
 
         )
     }
@@ -297,7 +417,7 @@ function Idm-Dispatcher {
             #
             # Output list of supported operations per table/view (named Class)
             #
-            for (($i = 0), ($j = 0); $i -lt 11; $i++)
+            for (($i = 0), ($j = 0); $i -lt 21; $i++)
             {
                 if($connection_params."table_$($i)_name".length -gt 0)
                 {
@@ -340,7 +460,7 @@ function Idm-Dispatcher {
 
             Log debug "MY CLASS NAME IS $($class)"
 
-            for (($i = 0), ($j = 0); $i -lt 11; $i++)
+            for (($i = 0), ($j = 0); $i -lt 21; $i++)
             {
                 if($connection_params."table_$($i)_name" -eq $class)
                 {
@@ -498,13 +618,16 @@ function Invoke-MsSqlCommand {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
         )
-
+        Log debug "Start ExecuteReader"
         $data_reader = $SqlCommand.ExecuteReader()
+        Log debug "Done ExecuteReader"
+        Log debug "Start GetSchemaTable"
         $column_names = @($data_reader.GetSchemaTable().ColumnName)
-
+        Log debug "Done GetSchemaTable"
         if ($column_names) {
 
             # Read data
+            Log debug "Start While"
             while ($data_reader.Read()) {
                 $hash_table = [ordered]@{}
 
@@ -515,10 +638,11 @@ function Invoke-MsSqlCommand {
                 # Output data
                 New-Object -TypeName PSObject -Property $hash_table
             }
-
+            Log debug "End While"
         }
 
         $data_reader.Close()
+        Log debug "Close DataReader"
     }
 
     # Streaming
