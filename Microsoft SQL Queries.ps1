@@ -621,17 +621,25 @@ function Invoke-MsSqlCommand {
 
         if ($column_names) {
 
+            $hash_table = [ordered]@{}
+
+            foreach ($column_name in $column_names) {
+                $hash_table[$column_name] = ""
+            }
+
+#           $obj = [PSCustomObject]$hash_table
+            $obj = New-Object -TypeName PSObject -Property $hash_table
+
             # Read data
             while ($data_reader.Read()) {
-                $hash_table = [ordered]@{}
-
                 foreach ($column_name in $column_names) {
-                    $hash_table[$column_name] = if ($data_reader[$column_name] -is [System.DBNull]) { $null } else { $data_reader[$column_name] }
+                    $obj.$column_name = if ($data_reader[$column_name] -is [System.DBNull]) { $null } else { $data_reader[$column_name] }
                 }
 
                 # Output data
-                [PSCustomObject]$hash_table
+                $obj
             }
+
         }
 
         $data_reader.Close()
