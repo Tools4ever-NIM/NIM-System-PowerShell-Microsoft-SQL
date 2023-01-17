@@ -157,39 +157,37 @@ function Fill-SqlInfoCache {
             full_object_name, sc.column_id
     "
 
-    $result = Invoke-MsSqlCommand $sql_command
-
-    Dispose-MsSqlCommand $sql_command
-
     $objects = New-Object System.Collections.ArrayList
     $object = @{}
 
     # Process in one pass
-    foreach ($row in $result) {
-        if ($row.full_object_name -ne $object.full_name) {
+    Invoke-MsSqlCommand $sql_command | ForEach-Object {
+        if ($_.full_object_name -ne $object.full_name) {
             if ($object.full_name -ne $null) {
                 $objects.Add($object) | Out-Null
             }
 
             $object = @{
-                full_name = $row.full_object_name
-                type      = $row.object_type
+                full_name = $_.full_object_name
+                type      = $_.object_type
                 columns   = New-Object System.Collections.ArrayList
             }
         }
 
         $object.columns.Add(@{
-            name           = $row.column_name
-            is_primary_key = $row.is_primary_key
-            is_identity    = $row.is_identity
-            is_computed    = $row.is_computed
-            is_nullable    = $row.is_nullable
+            name           = $_.column_name
+            is_primary_key = $_.is_primary_key
+            is_identity    = $_.is_identity
+            is_computed    = $_.is_computed
+            is_nullable    = $_.is_nullable
         }) | Out-Null
     }
 
     if ($object.full_name -ne $null) {
         $objects.Add($object) | Out-Null
     }
+
+    Dispose-MsSqlCommand $sql_command
 
     $Global:SqlInfoCache.Objects = $objects
     $Global:SqlInfoCache.Ts = Get-Date
@@ -512,7 +510,7 @@ function Idm-Dispatcher {
                 }
                 else {
                     # Log output
-                    $rv = Invoke-MsSqlCommand $sql_command $deparam_command
+                    $rv = Invoke-MsSqlCommand $sql_command $deparam_command | ForEach-Object { $_ }
                     LogIO info ($deparam_command -split ' ')[0] -Out $rv
 
                     $rv
@@ -581,16 +579,6 @@ function DeParam-MsSqlCommand {
             else {
                 switch ($p.SqlDbType) {
                     { $_ -in @(
-                        [System.Data.SqlDbType]::Date
-                        [System.Data.SqlDbType]::DateTime
-                        [System.Data.SqlDbType]::DateTime2
-                        [System.Data.SqlDbType]::DateTimeOffset
-                    )} {
-                        "FROM_UNIXTIME(" + $p.Value.ToString() + ")"
-                        
-                        break
-                    }
-                    { $_ -in @(
                         [System.Data.SqlDbType]::Char
                         [System.Data.SqlDbType]::Date
                         [System.Data.SqlDbType]::DateTime
@@ -607,8 +595,7 @@ function DeParam-MsSqlCommand {
                         "'" + $p.Value.ToString().Replace("'", "''") + "'"
                         break
                     }
-                   
-
+        
                     default {
                         $p.Value.ToString().Replace("'", "''")
                         break
@@ -631,11 +618,11 @@ function Invoke-MsSqlCommand {
     )
 
     # Streaming
-    # ERAM dbo.Files (426.977 rows) execution time: ?
     function Invoke-MsSqlCommand-ExecuteReader {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
         )
+
         $data_reader = $SqlCommand.ExecuteReader()
         $column_names = @($data_reader.GetSchemaTable().ColumnName)
 
@@ -647,7 +634,6 @@ function Invoke-MsSqlCommand {
                 $hash_table[$column_name] = ""
             }
 
-#           $obj = [PSCustomObject]$hash_table
             $obj = New-Object -TypeName PSObject -Property $hash_table
 
             # Read data
@@ -666,7 +652,6 @@ function Invoke-MsSqlCommand {
     }
 
     # Streaming
-    # ERAM dbo.Files (426.977 rows) execution time: 16.7 s
     function Invoke-MsSqlCommand-ExecuteReader00 {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
@@ -702,7 +687,6 @@ function Invoke-MsSqlCommand {
     }
 
     # Streaming
-    # ERAM dbo.Files (426.977 rows) execution time: 01:11.9 s
     function Invoke-MsSqlCommand-ExecuteReader01 {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
@@ -719,15 +703,13 @@ function Invoke-MsSqlCommand {
             }
 
             # Output data
-            [PSCustomObject]$hash_table
-            #New-Object -TypeName PSObject -Property $hash_table
+            New-Object -TypeName PSObject -Property $hash_table
         }
 
         $data_reader.Close()
     }
 
     # Non-streaming (data stored in $data_table)
-    # ERAM dbo.Files (426.977 rows) execution time: 15.5 s
     function Invoke-MsSqlCommand-DataAdapter-DataTable {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
@@ -745,7 +727,6 @@ function Invoke-MsSqlCommand {
     }
 
     # Non-streaming (data stored in $data_set)
-    # ERAM dbo.Files (426.977 rows) execution time: 14.8 s
     function Invoke-MsSqlCommand-DataAdapter-DataSet {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
@@ -814,7 +795,7 @@ function Open-MsSqlConnection {
     }
 
     if ($Global:MsSqlConnection) {
-        Log debug "Reusing MsSqlConnection"
+        #Log debug "Reusing MsSqlConnection"
     }
     else {
         Log info "Opening MsSqlConnection '$connection_string'"
