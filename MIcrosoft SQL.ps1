@@ -305,6 +305,13 @@ function Idm-Dispatcher {
                 'Read' {
                     @(
                         @{
+                            name = 'select_distinct'
+                            type = 'checkbox'
+                            label = 'Distinct Rows'
+                            description = 'Apply Distinct to select'
+                            value = $false
+                        }
+                        @{
                             name = 'where_clause'
                             type = 'textbox'
                             label = 'Filter (SQL where-clause)'
@@ -424,6 +431,8 @@ function Idm-Dispatcher {
             $sql_command = New-MsSqlCommand
 
             $projection = if ($function_params['selected_columns'].count -eq 0) { '*' } else { @($function_params['selected_columns'] | ForEach-Object { "[$_]" }) -join ', ' }
+
+            if($function_params['select_distinct']) { $projection = "DISTINCT $($projection)" }
 
             switch ($Operation) {
                 'Create' {
