@@ -122,40 +122,50 @@ function Fill-SqlInfoCache {
 
     # Refresh cache
     $sql_command = New-MsSqlCommand "
-        SELECT
-            ss.name + '.[' + st.name + ']' AS full_object_name,
-            (CASE WHEN st.type = 'U' THEN 'Table' WHEN st.type = 'V' THEN 'View' ELSE 'Other' END) AS object_type,
-            sc.name AS column_name,
-            CAST(CASE WHEN pk.COLUMN_NAME IS NULL THEN 0 ELSE 1 END AS BIT) AS is_primary_key,
-            sc.is_identity,
-            sc.is_computed,
-            sc.is_nullable
-        FROM
-            sys.schemas AS ss
-            INNER JOIN (
-                SELECT
-                    name, object_id, schema_id, type
-                FROM
-                    sys.tables
-                UNION ALL
-                SELECT
-                    name, object_id, schema_id, type
-                FROM
-                    sys.views
-            ) AS st ON ss.schema_id = st.schema_id
-            INNER JOIN sys.columns AS sc ON st.object_id = sc.object_id
-            LEFT JOIN (
-                SELECT
-                    CCU.*
-                FROM
-                    INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS CCU
-                    INNER JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC ON CCU.CONSTRAINT_NAME = TC.CONSTRAINT_NAME
-                WHERE
-                    TC.CONSTRAINT_TYPE = 'PRIMARY KEY'
-            ) AS pk ON ss.name = pk.TABLE_SCHEMA AND st.name = pk.TABLE_NAME AND sc.name = pk.COLUMN_NAME
-        ORDER BY
-            full_object_name, sc.column_id
-    "
+                                        SELECT
+                                        ss.name + '.[' + st.name + ']' AS full_object_name,
+                                        (CASE WHEN st.type = 'U' THEN 'Table' WHEN st.type = 'V' THEN 'View' ELSE 'Other' END) AS object_type,
+                                        sc.name AS column_name,
+                                        CAST(CASE WHEN pk.COLUMN_NAME IS NULL THEN 0 ELSE 1 END AS BIT) AS is_primary_key,
+                                        sc.is_identity,
+                                        sc.is_computed,
+                                        sc.is_nullable
+                                    FROM
+                                        sys.schemas AS ss
+                                        INNER JOIN (
+                                            SELECT
+                                                name, object_id, schema_id, type
+                                            FROM
+                                                sys.tables
+                                            UNION ALL
+                                            SELECT
+                                                name, object_id, schema_id, type
+                                            FROM
+                                                sys.views
+                                        ) AS st ON ss.schema_id = st.schema_id
+                                        INNER JOIN sys.columns AS sc ON st.object_id = sc.object_id
+                                        LEFT JOIN (
+                                            SELECT
+                                                CCU.*
+                                            FROM
+                                                INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS CCU
+                                                INNER JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC ON CCU.CONSTRAINT_NAME = TC.CONSTRAINT_NAME
+                                            WHERE
+                                                TC.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                                        ) AS pk ON ss.name = pk.TABLE_SCHEMA AND st.name = pk.TABLE_NAME AND sc.name = pk.COLUMN_NAME
+                                    UNION
+                                    SELECT 
+                                        SCHEMA_NAME(SO.SCHEMA_ID) + '.[' + SO.Name + ']' AS full_object_name
+                                    , 'Stored Procedure' [object_type]
+                                    , REPLACE(PM.Name,'@','') [column_name]
+                                    , 0 [is_primary_key]
+                                    , 0 [is_identity]
+                                    , 0 [is_computed]
+                                    , 0 [is_nullable]
+                                    FROM sys.objects AS SO
+                                    INNER JOIN sys.parameters AS PM ON SO.OBJECT_ID = PM.OBJECT_ID
+                                    WHERE SO.TYPE IN ('P','FN')
+                                    AND PM.Parameter_ID <> 0"
 
     $objects = New-Object System.Collections.ArrayList
     $object = @{}
@@ -222,12 +232,26 @@ function Idm-Dispatcher {
             #
             # Output list of supported operations per table/view (named Class)
             #
-
+                Log info ($Global:SqlInfoCache.Objects | ConvertTo-Json)
             @(
                 foreach ($object in $Global:SqlInfoCache.Objects) {
                     $primary_keys = $object.columns | Where-Object { $_.is_primary_key } | ForEach-Object { $_.name }
 
-                    if ($object.type -ne 'Table') {
+                    if ($object.type -eq 'Stored Procedure') {
+                        [ordered]@{
+                            Class = "SPNODATA_$($object.full_name)"
+                            Operation = 'Create'
+                        }
+
+                        [ordered]@{
+                            Class = "SPNODATA_$($object.full_name)"
+                            Operation = 'Read'
+                            'Source type' = $object.type
+                            'Primary key' = $primary_keys -join ', '
+                            'Supported operations' = "CR"
+                        }
+                    }
+                    elseif ($object.type -ne 'Table' -and $object.type -ne 'Stored Procedure') {
                         # Non-tables only support 'Read'
                         [ordered]@{
                             Class = $object.full_name
@@ -283,22 +307,21 @@ function Idm-Dispatcher {
             Open-MsSqlConnection $SystemParams
 
             Fill-SqlInfoCache
-
-            $columns = ($Global:SqlInfoCache.Objects | Where-Object { $_.full_name -eq $Class }).columns
+            $columns = ($Global:SqlInfoCache.Objects | Where-Object { $_.full_name -eq $Class.replace('SPNODATA_','') }).columns
 
             switch ($Operation) {
                 'Create' {
-                    @{
-                        semantics = 'create'
-                        parameters = @(
-                            $columns | ForEach-Object {
-                                @{
-                                    name = $_.name;
-                                    allowance = if ($_.is_identity -or $_.is_computed) { 'prohibited' } elseif (! $_.is_nullable) { 'mandatory' } else { 'optional' }
+                        @{
+                            semantics = 'create'
+                            parameters = @(
+                                $columns | ForEach-Object {
+                                    @{
+                                        name = $_.name;
+                                        allowance = if ($_.is_identity -or $_.is_computed) { 'prohibited' } elseif (! $_.is_nullable) { 'mandatory' } else { 'optional' }
+                                    }
                                 }
-                            }
-                        )
-                    }
+                            )
+                        }
                     break
                 }
 
@@ -405,6 +428,13 @@ function Idm-Dispatcher {
             # Execute function
             #
 
+            if($Class.StartsWith('SPNODATA_') -and $Operation -eq 'Read')
+            {
+                #Return empty result for Stored Procedure
+                @{}
+                break
+            }
+
             Open-MsSqlConnection $SystemParams
 
             if (! $Global:ColumnsInfoCache[$Class]) {
@@ -436,30 +466,39 @@ function Idm-Dispatcher {
 
             switch ($Operation) {
                 'Create' {
-                    $filter = if ($identity_col) {
-                                  "[$identity_col] = SCOPE_IDENTITY()"
-                              }
-                              elseif ($primary_keys) {
-                                  @($primary_keys | ForEach-Object { "[$_] = $(AddParam-MsSqlCommand $sql_command $function_params[$_])" }) -join ' AND '
-                              }
-                              else {
-                                  @($function_params.Keys | ForEach-Object { "[$_] = $(AddParam-MsSqlCommand $sql_command $function_params[$_])" }) -join ' AND '
-                              }
+                    if($Class.StartsWith('SPNODATA_'))
+                    {
+                        $parameters = $(@($function_params.Keys | ForEach-Object { "@$($_) = '$($function_params[$_])'" }) -join ', ') 
+                        $sql_command.CommandText = "EXECUTE {0} {1}" -f $Class.replace('SPNODATA_',''), $parameters
+                        Log debug $sql_command.CommandText
+                    }
+                    else {
+                    
+                            $filter = if ($identity_col) {
+                                        "[$identity_col] = SCOPE_IDENTITY()"
+                                    }
+                                    elseif ($primary_keys) {
+                                        @($primary_keys | ForEach-Object { "[$_] = $(AddParam-MsSqlCommand $sql_command $function_params[$_])" }) -join ' AND '
+                                    }
+                                    else {
+                                        @($function_params.Keys | ForEach-Object { "[$_] = $(AddParam-MsSqlCommand $sql_command $function_params[$_])" }) -join ' AND '
+                                    }
 
-                    $sql_command.CommandText = "
-                        INSERT INTO $Class (
-                            $(@($function_params.Keys | ForEach-Object { "[$_]" }) -join ', ')
-                        )
-                        VALUES (
-                            $(@($function_params.Keys | ForEach-Object { AddParam-MsSqlCommand $sql_command $function_params[$_] }) -join ', ')
-                        );
-                        SELECT TOP(1)
-                            $projection
-                        FROM
-                            $Class
-                        WHERE
-                            $filter
-                    "
+                            $sql_command.CommandText = "
+                                INSERT INTO $Class (
+                                    $(@($function_params.Keys | ForEach-Object { "[$_]" }) -join ', ')
+                                )
+                                VALUES (
+                                    $(@($function_params.Keys | ForEach-Object { AddParam-MsSqlCommand $sql_command $function_params[$_] }) -join ', ')
+                                );
+                                SELECT TOP(1)
+                                    $projection
+                                FROM
+                                    $Class
+                                WHERE
+                                    $filter
+                            "
+                            }
                     break
                 }
 
