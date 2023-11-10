@@ -129,7 +129,7 @@ function Fill-SqlInfoCache {
             CAST(CASE WHEN pk.COLUMN_NAME IS NULL THEN 0 ELSE 1 END AS BIT) AS is_primary_key,
             sc.is_identity,
             sc.is_computed,
-            sc.is_nullable
+            CAST(CASE WHEN  pk.COLUMN_NAME IS NULL AND (sc.is_nullable = 1 OR sc.default_object_id <> 0) THEN 1 ELSE 0 END AS BIT) AS is_nullable
         FROM
             sys.schemas AS ss
             INNER JOIN (
