@@ -308,21 +308,21 @@ function Idm-Dispatcher {
                             name = 'select_distinct'
                             type = 'checkbox'
                             label = 'Distinct Rows'
-                            description = 'Apply Distinct to select'
+                            tooltip = 'Apply Distinct to select'
                             value = $false
                         }
                         @{
                             name = 'where_clause'
                             type = 'textbox'
                             label = 'Filter (SQL where-clause)'
-                            description = 'Applied SQL where-clause'
+                            tooltip = 'Applied SQL where-clause'
                             value = ''
                         }
                         @{
                             name = 'selected_columns'
                             type = 'grid'
                             label = 'Include columns'
-                            description = 'Selected columns'
+                            tooltip = 'Selected columns'
                             table = @{
                                 rows = @($columns | ForEach-Object {
                                     @{
