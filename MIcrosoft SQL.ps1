@@ -33,14 +33,14 @@ function Idm-SystemInfo {
                 name = 'server'
                 type = 'textbox'
                 label = 'Server'
-                description = 'Name of Microsoft SQL server'
+                tooltip = 'Name of Microsoft SQL server'
                 value = ''
             }
             @{
                 name = 'database'
                 type = 'textbox'
                 label = 'Database'
-                description = 'Name of Microsoft SQL database'
+                tooltip = 'Name of Microsoft SQL database'
                 value = ''
             }
             @{
@@ -54,7 +54,7 @@ function Idm-SystemInfo {
                 type = 'textbox'
                 label = 'Username'
                 label_indent = $true
-                description = 'User account name to access Microsoft SQL server'
+                tooltip = 'User account name to access Microsoft SQL server'
                 value = ''
                 hidden = 'use_svc_account_creds'
             }
@@ -64,7 +64,7 @@ function Idm-SystemInfo {
                 password = $true
                 label = 'Password'
                 label_indent = $true
-                description = 'User account password to access Microsoft SQL server'
+                tooltip = 'User account password to access Microsoft SQL server'
                 value = ''
                 hidden = 'use_svc_account_creds'
             }
@@ -72,14 +72,14 @@ function Idm-SystemInfo {
                 name = 'nr_of_sessions'
                 type = 'textbox'
                 label = 'Max. number of simultaneous sessions'
-                description = ''
+                tooltip = ''
                 value = 5
             }
             @{
                 name = 'sessions_idle_timeout'
                 type = 'textbox'
                 label = 'Session cleanup idle time (minutes)'
-                description = ''
+                tooltip = ''
                 value = 30
             }
         )
