@@ -122,40 +122,71 @@ function Fill-SqlInfoCache {
 
     # Refresh cache
     $sql_command = New-MsSqlCommand "
-        SELECT
-            ss.name + '.[' + st.name + ']' AS full_object_name,
-            (CASE WHEN st.type = 'U' THEN 'Table' WHEN st.type = 'V' THEN 'View' ELSE 'Other' END) AS object_type,
-            sc.name AS column_name,
-            CAST(CASE WHEN pk.COLUMN_NAME IS NULL THEN 0 ELSE 1 END AS BIT) AS is_primary_key,
-            sc.is_identity,
-            sc.is_computed,
-            CAST(CASE WHEN  pk.COLUMN_NAME IS NULL AND (sc.is_nullable = 1 OR sc.default_object_id <> 0) THEN 1 ELSE 0 END AS BIT) AS is_nullable
-        FROM
-            sys.schemas AS ss
-            INNER JOIN (
-                SELECT
-                    name, object_id, schema_id, type
-                FROM
-                    sys.tables
-                UNION ALL
-                SELECT
-                    name, object_id, schema_id, type
-                FROM
-                    sys.views
-            ) AS st ON ss.schema_id = st.schema_id
-            INNER JOIN sys.columns AS sc ON st.object_id = sc.object_id
-            LEFT JOIN (
-                SELECT
-                    CCU.*
-                FROM
-                    INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS CCU
-                    INNER JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC ON CCU.CONSTRAINT_NAME = TC.CONSTRAINT_NAME
-                WHERE
-                    TC.CONSTRAINT_TYPE = 'PRIMARY KEY'
-            ) AS pk ON ss.name = pk.TABLE_SCHEMA AND st.name = pk.TABLE_NAME AND sc.name = pk.COLUMN_NAME
-        ORDER BY
-            full_object_name, sc.column_id
-    "
+        SELECT 
+        ss.NAME + '.[' + st.NAME + ']' AS full_object_name, 
+        (
+            CASE WHEN st.type = 'U' THEN 'Table' WHEN st.type = 'V' THEN 'View' ELSE 'Other' END
+        ) AS object_type, 
+        sc.NAME AS column_name, 
+        Cast(
+            CASE WHEN pk.column_name IS NULL THEN 0 ELSE 1 END AS BIT
+        ) AS is_primary_key, 
+        sc.is_identity, 
+        sc.is_computed, 
+        Cast(
+            CASE WHEN pk.column_name IS NULL 
+            AND (
+            sc.is_nullable = 1 
+            OR sc.default_object_id <> 0
+            ) THEN 1 ELSE 0 END AS BIT
+        ) AS is_nullable 
+        FROM 
+        sys.schemas AS ss 
+        INNER JOIN (
+            SELECT 
+            NAME, 
+            object_id, 
+            schema_id, 
+            type 
+            FROM 
+            sys.tables 
+            UNION ALL 
+            SELECT 
+            NAME, 
+            object_id, 
+            schema_id, 
+            type 
+            FROM 
+            sys.views
+        ) AS st ON ss.schema_id = st.schema_id 
+        INNER JOIN sys.columns AS sc ON st.object_id = sc.object_id 
+        LEFT JOIN (
+            SELECT 
+            CCU.* 
+            FROM 
+            information_schema.constraint_column_usage AS CCU 
+            INNER JOIN information_schema.table_constraints AS TC ON CCU.constraint_name = TC.constraint_name 
+            WHERE 
+            TC.constraint_type = 'PRIMARY KEY'
+        ) AS pk ON ss.NAME = pk.table_schema 
+        AND st.NAME = pk.table_name 
+        AND sc.NAME = pk.column_name 
+        UNION ALL 
+        SELECT 
+        ss.NAME + '.[' + sp.NAME + ']' AS full_object_name, 
+        'Stored Procedure' AS object_type, 
+        p.NAME AS column_name, 
+        '0' AS is_primary_key, 
+        '0' AS is_identity, 
+        '0' AS is_computed, 
+        p.is_nullable AS is_nullable 
+        FROM 
+        sys.procedures sp 
+        INNER JOIN sys.schemas ss ON sp.schema_id = ss.schema_id 
+        INNER JOIN sys.parameters p ON sp.object_id = p.object_id 
+        ORDER BY 
+        full_object_name, 
+        column_name"
 
     $objects = New-Object System.Collections.ArrayList
     $object = @{}
@@ -227,7 +258,21 @@ function Idm-Dispatcher {
                 foreach ($object in $Global:SqlInfoCache.Objects) {
                     $primary_keys = $object.columns | Where-Object { $_.is_primary_key } | ForEach-Object { $_.name }
 
-                    if ($object.type -ne 'Table') {
+                    if ($object.type -eq 'Stored Procedure') {
+                        [ordered]@{
+                            Class = $object.full_name
+                            Operation = 'Execute'
+                        }
+
+                        [ordered]@{
+                            Class = $object.full_name
+                            Operation = 'Read'
+                            'Source type' = $object.type
+                            'Primary key' = ""
+                            'Supported operations' = "CR"
+                        }
+                    }
+                    elseif ($object.type -eq 'View') {
                         # Non-tables only support 'Read'
                         [ordered]@{
                             Class = $object.full_name
@@ -287,6 +332,21 @@ function Idm-Dispatcher {
             $columns = ($Global:SqlInfoCache.Objects | Where-Object { $_.full_name -eq $Class }).columns
 
             switch ($Operation) {
+                'Execute' {
+                    @{
+                        semantics = ''
+                        parameters = @(
+                            $columns | ForEach-Object {
+                                @{
+                                    name = $_.name;
+                                    allowance = if ($_.is_identity -or $_.is_computed) { 'prohibited' } elseif (! $_.is_nullable) { 'mandatory' } else { 'optional' }
+                                }
+                            }
+                        )
+                    }
+                    break
+                }
+
                 'Create' {
                     @{
                         semantics = 'create'
@@ -409,17 +469,19 @@ function Idm-Dispatcher {
 
             if (! $Global:ColumnsInfoCache[$Class]) {
                 Fill-SqlInfoCache
-
                 $columns = ($Global:SqlInfoCache.Objects | Where-Object { $_.full_name -eq $Class }).columns
 
                 $Global:ColumnsInfoCache[$Class] = @{
+                    columns = $columns
                     primary_keys = @($columns | Where-Object { $_.is_primary_key } | ForEach-Object { $_.name })
                     identity_col = @($columns | Where-Object { $_.is_identity    } | ForEach-Object { $_.name })[0]
+                    type = ($Global:SqlInfoCache.Objects | Where-Object { $_.full_name -eq $Class }).type
                 }
             }
 
             $primary_keys = $Global:ColumnsInfoCache[$Class].primary_keys
             $identity_col = $Global:ColumnsInfoCache[$Class].identity_col
+            $type = $Global:ColumnsInfoCache[$Class].type
 
             $function_params = ConvertFrom-Json2 $FunctionParams
 
@@ -435,6 +497,14 @@ function Idm-Dispatcher {
             if($function_params['select_distinct']) { $projection = "DISTINCT $($projection)" }
 
             switch ($Operation) {
+                'Execute' {
+                    $sql_command.CommandText = "
+                        EXECUTE $Class 
+                            $(@($function_params.Keys | ForEach-Object { AddParam-MsSqlCommand $sql_command $function_params[$_] }) -join ', ')
+                    "
+                    break
+                }
+
                 'Create' {
                     $filter = if ($identity_col) {
                                   "[$identity_col] = SCOPE_IDENTITY()"
@@ -464,14 +534,20 @@ function Idm-Dispatcher {
                 }
 
                 'Read' {
-                    $filter = if ($function_params['where_clause'].length -eq 0) { '' } else { " WHERE $($function_params['where_clause'])" }
+                    if($type -eq 'Stored Procedure') {
+                        $projection = @($Global:ColumnsInfoCache[$Class].columns | ForEach-Object { "'' [$($_.name)]";}) -join ', '
+                        $sql_command.CommandText = "SELECT $projection WHERE 1=2"
+                    } else {
+                        $filter = if ($function_params['where_clause'].length -eq 0) { '' } else { " WHERE $($function_params['where_clause'])" }
 
-                    $sql_command.CommandText = "
-                        SELECT
-                            $projection
-                        FROM
-                            $Class$filter
-                    "
+                        $sql_command.CommandText = "
+                            SELECT
+                                $projection
+                            FROM
+                                $Class$filter
+                        "
+                    }
+                    
                     break
                 }
 
