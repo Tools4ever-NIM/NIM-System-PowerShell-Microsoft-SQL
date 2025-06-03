@@ -25,7 +25,7 @@ function Idm-SystemInfo {
         [string] $ConnectionParams
     )
 
-    Log info "-Connection=$Connection -TestConnection=$TestConnection -Configuration=$Configuration -ConnectionParams='$ConnectionParams'"
+    Log verbose "-Connection=$Connection -TestConnection=$TestConnection -Configuration=$Configuration -ConnectionParams='$ConnectionParams'"
     
     if ($Connection) {
         @(
@@ -93,7 +93,7 @@ function Idm-SystemInfo {
         @()
     }
 
-    Log info "Done"
+    Log verbose "Done"
 }
 
 
@@ -237,7 +237,7 @@ function Idm-Dispatcher {
         [string] $FunctionParams
     )
 
-    Log info "-Class='$Class' -Operation='$Operation' -GetMeta=$GetMeta -SystemParams='$SystemParams' -FunctionParams='$FunctionParams'"
+    Log verbose "-Class='$Class' -Operation='$Operation' -GetMeta=$GetMeta -SystemParams='$SystemParams' -FunctionParams='$FunctionParams'"
 
     if ($Class -eq '') {
 
@@ -608,7 +608,7 @@ function Idm-Dispatcher {
 
     }
 
-    Log info "Done"
+    Log verbose "Done"
 }
 
 
@@ -871,7 +871,7 @@ function Open-MsSqlConnection {
     $connection_string = $cs_builder.ConnectionString
 
     if ($Global:MsSqlConnection -and $connection_string -ne $Global:MsSqlConnectionString) {
-        Log info "MsSqlConnection connection parameters changed"
+        Log verbose "MsSqlConnection connection parameters changed"
         Close-MsSqlConnection
     }
 
@@ -884,7 +884,7 @@ function Open-MsSqlConnection {
         #Log debug "Reusing MsSqlConnection"
     }
     else {
-        Log info "Opening MsSqlConnection '$connection_string'"
+        Log verbose "Opening MsSqlConnection '$connection_string'"
 
         try {
             $connection = New-Object System.Data.SqlClient.SqlConnection($connection_string)
@@ -901,14 +901,14 @@ function Open-MsSqlConnection {
             Write-Error $_
         }
 
-        Log info "Done"
+        Log verbose "Done"
     }
 }
 
 
 function Close-MsSqlConnection {
     if ($Global:MsSqlConnection) {
-        Log info "Closing MsSqlConnection"
+        Log verbose "Closing MsSqlConnection"
 
         try {
             $Global:MsSqlConnection.Close()
@@ -918,6 +918,6 @@ function Close-MsSqlConnection {
             # Purposely ignoring errors
         }
 
-        Log info "Done"
+        Log verbose "Done"
     }
 }
