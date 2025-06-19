@@ -1,9 +1,6 @@
 #
 # Microsoft SQL.ps1 - IDM System PowerShell Script for Microsoft SQL Server.
 #
-# Any IDM System PowerShell Script is dot-sourced in a separate PowerShell context, after
-# dot-sourcing the IDM Generic PowerShell Script '../Generic.ps1'.
-#
 
 
 $Log_MaskableKeys = @(
@@ -29,6 +26,12 @@ function Idm-SystemInfo {
     
     if ($Connection) {
         @(
+            @{
+                name = 'connection_header'
+                type = 'text'
+                text = 'Connection'
+				tooltip = 'Connection information for the database'
+            }    
             @{
                 name = 'server'
                 type = 'textbox'
@@ -69,18 +72,38 @@ function Idm-SystemInfo {
                 hidden = 'use_svc_account_creds'
             }
             @{
+                name = 'query_timeout'
+                type = 'textbox'
+                label = 'Query Timeout'
+                description = 'Time it takes for the query to timeout'
+                value = '1800'
+            }
+			@{
+                name = 'connection_timeout'
+                type = 'textbox'
+                label = 'Connection Timeout'
+                description = 'Time it takes for the ODBC Connection to timeout'
+                value = '3600'
+            }
+			@{
+                name = 'session_header'
+                type = 'text'
+                text = 'Session Options'
+				tooltip = 'Options for system session'
+            }
+			@{
                 name = 'nr_of_sessions'
                 type = 'textbox'
                 label = 'Max. number of simultaneous sessions'
                 tooltip = ''
-                value = 5
+                value = 1
             }
             @{
                 name = 'sessions_idle_timeout'
                 type = 'textbox'
                 label = 'Session cleanup idle time (minutes)'
                 tooltip = ''
-                value = 30
+                value = 1
             }
         )
     }
@@ -113,7 +136,8 @@ $SqlInfoCache = @{}
 
 function Fill-SqlInfoCache {
     param (
-        [switch] $Force
+        [switch] $Force,
+        [string] $Timeout = 3600
     )
 
     if (!$Force -and $Global:SqlInfoCache.Ts -and ((Get-Date) - $Global:SqlInfoCache.Ts).TotalMilliseconds -le [Int32]600000) {
@@ -188,6 +212,8 @@ function Fill-SqlInfoCache {
         full_object_name, 
         column_name"
 
+    $sql_command.CommandTimeout = $Timeout
+
     $objects = New-Object System.Collections.ArrayList
     $object = @{}
 
@@ -238,6 +264,7 @@ function Idm-Dispatcher {
     )
 
     Log verbose "-Class='$Class' -Operation='$Operation' -GetMeta=$GetMeta -SystemParams='$SystemParams' -FunctionParams='$FunctionParams'"
+    $system_params = ConvertFrom-Json2 $SystemParams
 
     if ($Class -eq '') {
 
@@ -248,7 +275,7 @@ function Idm-Dispatcher {
 
             Open-MsSqlConnection $SystemParams
 
-            Fill-SqlInfoCache -Force
+            Fill-SqlInfoCache -Force -Timeout $system_params.query_timeout
 
             #
             # Output list of supported operations per table/view (named Class)
@@ -327,7 +354,7 @@ function Idm-Dispatcher {
 
             Open-MsSqlConnection $SystemParams
 
-            Fill-SqlInfoCache
+            Fill-SqlInfoCache -Timeout $system_params.query_timeout
 
             $columns = ($Global:SqlInfoCache.Objects | Where-Object { $_.full_name -eq $Class }).columns
 
@@ -491,6 +518,7 @@ function Idm-Dispatcher {
             foreach ($key in $keys_with_null_value) { $function_params[$key] = [System.DBNull]::Value }
 
             $sql_command = New-MsSqlCommand
+            $sql_command.CommandTimeout = $Timeout
 
             $projection = if ($function_params['selected_columns'].count -eq 0) { '*' } else { @($function_params['selected_columns'] | ForEach-Object { "[$_]" }) -join ', ' }
 
@@ -707,7 +735,7 @@ function Invoke-MsSqlCommand {
         param (
             [System.Data.SqlClient.SqlCommand] $SqlCommand
         )
-
+        Log verbose "Executing Query: $($SqlCommand.CommandText)"
         $data_reader = $SqlCommand.ExecuteReader()
         $column_names = @($data_reader.GetSchemaTable().ColumnName)
 
@@ -737,98 +765,6 @@ function Invoke-MsSqlCommand {
         $data_reader.Close()
     }
 
-    # Streaming
-    function Invoke-MsSqlCommand-ExecuteReader00 {
-        param (
-            [System.Data.SqlClient.SqlCommand] $SqlCommand
-        )
-
-        $data_reader = $SqlCommand.ExecuteReader()
-        $column_names = @($data_reader.GetSchemaTable().ColumnName)
-
-        if ($column_names) {
-
-            # Initialize result
-            $hash_table = [ordered]@{}
-
-            for ($i = 0; $i -lt $column_names.Count; $i++) {
-                $hash_table[$column_names[$i]] = ''
-            }
-
-            $result = New-Object -TypeName PSObject -Property $hash_table
-
-            # Read data
-            while ($data_reader.Read()) {
-                foreach ($column_name in $column_names) {
-                    $result.$column_name = $data_reader[$column_name]
-                }
-
-                # Output data
-                $result
-            }
-
-        }
-
-        $data_reader.Close()
-    }
-
-    # Streaming
-    function Invoke-MsSqlCommand-ExecuteReader01 {
-        param (
-            [System.Data.SqlClient.SqlCommand] $SqlCommand
-        )
-
-        $data_reader = $SqlCommand.ExecuteReader()
-        $field_count = $data_reader.FieldCount
-
-        while ($data_reader.Read()) {
-            $hash_table = [ordered]@{}
-        
-            for ($i = 0; $i -lt $field_count; $i++) {
-                $hash_table[$data_reader.GetName($i)] = $data_reader.GetValue($i)
-            }
-
-            # Output data
-            New-Object -TypeName PSObject -Property $hash_table
-        }
-
-        $data_reader.Close()
-    }
-
-    # Non-streaming (data stored in $data_table)
-    function Invoke-MsSqlCommand-DataAdapter-DataTable {
-        param (
-            [System.Data.SqlClient.SqlCommand] $SqlCommand
-        )
-
-        $data_adapter = New-Object System.Data.SqlClient.SqlDataAdapter($SqlCommand)
-        $data_table   = New-Object System.Data.DataTable
-        $data_adapter.Fill($data_table) | Out-Null
-
-        # Output data
-        $data_table.Rows
-
-        $data_table.Dispose()
-        $data_adapter.Dispose()
-    }
-
-    # Non-streaming (data stored in $data_set)
-    function Invoke-MsSqlCommand-DataAdapter-DataSet {
-        param (
-            [System.Data.SqlClient.SqlCommand] $SqlCommand
-        )
-
-        $data_adapter = New-Object System.Data.SqlClient.SqlDataAdapter($SqlCommand)
-        $data_set     = New-Object System.Data.DataSet
-        $data_adapter.Fill($data_set) | Out-Null
-
-        # Output data
-        $data_set.Tables[0]
-
-        $data_set.Dispose()
-        $data_adapter.Dispose()
-    }
-
     if (! $DeParamCommand) {
         $DeParamCommand = DeParam-MsSqlCommand $SqlCommand
     }
@@ -839,8 +775,8 @@ function Invoke-MsSqlCommand {
         Invoke-MsSqlCommand-ExecuteReader $SqlCommand
     }
     catch {
-        Log error "Failed: $_"
-        Write-Error $_
+        Log error "Query Failure: $_"
+        throw $_
     }
 
     Log debug "Done"
@@ -859,6 +795,7 @@ function Open-MsSqlConnection {
     # Use connection related parameters only
     $cs_builder['Data Source']     = $connection_params.server
     $cs_builder['Initial Catalog'] = $connection_params.database
+    $cs_builder["Connect Timeout"] = $connection_params.connection_timeout
 
     if ($connection_params.use_svc_account_creds) {
         $cs_builder['Integrated Security'] = 'SSPI'
@@ -897,8 +834,8 @@ function Open-MsSqlConnection {
             $Global:SqlInfoCache = @{}
         }
         catch {
-            Log error "Failed: $_"
-            Write-Error $_
+            Log error "Connection Failure: $_"
+            throw $_
         }
 
         Log verbose "Done"
