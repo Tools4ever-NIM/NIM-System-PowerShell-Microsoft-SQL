@@ -147,70 +147,72 @@ function Fill-SqlInfoCache {
     # Refresh cache
     $sql_command = New-MsSqlCommand "
         SELECT 
-        ss.NAME + '.[' + st.NAME + ']' AS full_object_name, 
-        (
-            CASE WHEN st.type = 'U' THEN 'Table' WHEN st.type = 'V' THEN 'View' ELSE 'Other' END
-        ) AS object_type, 
-        sc.NAME AS column_name, 
-        Cast(
-            CASE WHEN pk.column_name IS NULL THEN 0 ELSE 1 END AS BIT
-        ) AS is_primary_key, 
-        sc.is_identity, 
-        sc.is_computed, 
-        Cast(
-            CASE WHEN pk.column_name IS NULL 
-            AND (
-            sc.is_nullable = 1 
-            OR sc.default_object_id <> 0
-            ) THEN 1 ELSE 0 END AS BIT
-        ) AS is_nullable 
+            ss.name + '.[' + st.name + ']' AS full_object_name,
+            CASE 
+                WHEN st.type = 'U' THEN 'Table'
+                WHEN st.type = 'V' THEN 'View'
+                ELSE 'Other'
+            END AS object_type,
+            sc.name AS column_name,
+            CAST(CASE WHEN pk.column_name IS NULL THEN 0 ELSE 1 END AS BIT) AS is_primary_key,
+            sc.is_identity,
+            sc.is_computed,
+            CAST(
+                CASE 
+                    WHEN pk.column_name IS NULL AND (sc.is_nullable = 1 OR sc.default_object_id <> 0) 
+                    THEN 1 ELSE 0 
+                END AS BIT
+            ) AS is_nullable
         FROM 
-        sys.schemas AS ss 
+            sys.schemas ss
         INNER JOIN (
-            SELECT 
-            NAME, 
-            object_id, 
-            schema_id, 
-            type 
-            FROM 
-            sys.tables 
-            UNION ALL 
-            SELECT 
-            NAME, 
-            object_id, 
-            schema_id, 
-            type 
-            FROM 
-            sys.views
-        ) AS st ON ss.schema_id = st.schema_id 
-        INNER JOIN sys.columns AS sc ON st.object_id = sc.object_id 
+            SELECT name, object_id, schema_id, type
+            FROM sys.tables
+            UNION ALL
+            SELECT name, object_id, schema_id, type
+            FROM sys.views
+        ) st ON ss.schema_id = st.schema_id
+        INNER JOIN sys.columns sc ON st.object_id = sc.object_id
         LEFT JOIN (
             SELECT 
-            CCU.* 
+                c.name AS column_name,
+                t.name AS table_name,
+                s.name AS schema_name
             FROM 
-            information_schema.constraint_column_usage AS CCU 
-            INNER JOIN information_schema.table_constraints AS TC ON CCU.constraint_name = TC.constraint_name 
-            WHERE 
-            TC.constraint_type = 'PRIMARY KEY'
-        ) AS pk ON ss.NAME = pk.table_schema 
-        AND st.NAME = pk.table_name 
-        AND sc.NAME = pk.column_name 
-        UNION ALL 
+                sys.key_constraints kc
+            INNER JOIN sys.indexes i 
+                ON kc.unique_index_id = i.index_id AND kc.parent_object_id = i.object_id
+            INNER JOIN sys.index_columns ic 
+                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            INNER JOIN sys.columns c 
+                ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+            INNER JOIN sys.tables t 
+                ON kc.parent_object_id = t.object_id
+            INNER JOIN sys.schemas s 
+                ON t.schema_id = s.schema_id
+            WHERE kc.type = 'PK'
+        ) pk ON ss.name = pk.schema_name 
+            AND st.name = pk.table_name 
+            AND sc.name = pk.column_name
+
+        UNION ALL
+
         SELECT 
-        ss.NAME + '.[' + sp.NAME + ']' AS full_object_name, 
-        'Stored Procedure' AS object_type, 
-        p.NAME AS column_name, 
-        '0' AS is_primary_key, 
-        '0' AS is_identity, 
-        '0' AS is_computed, 
-        p.is_nullable AS is_nullable 
+            ss.name + '.[' + sp.name + ']' AS full_object_name,
+            'Stored Procedure' AS object_type,
+            p.name AS column_name,
+            CAST(0 AS BIT) AS is_primary_key,
+            CAST(0 AS BIT) AS is_identity,
+            CAST(0 AS BIT) AS is_computed,
+            p.is_nullable
         FROM 
-        sys.procedures sp 
-        INNER JOIN sys.schemas ss ON sp.schema_id = ss.schema_id 
-        INNER JOIN sys.parameters p ON sp.object_id = p.object_id 
+            sys.procedures sp
+        INNER JOIN sys.schemas ss ON sp.schema_id = ss.schema_id
+        INNER JOIN sys.parameters p ON sp.object_id = p.object_id
+
         ORDER BY 
-        full_object_name, 
-        column_name"
+            full_object_name,
+            column_name"
 
     $sql_command.CommandTimeout = $Timeout
 
