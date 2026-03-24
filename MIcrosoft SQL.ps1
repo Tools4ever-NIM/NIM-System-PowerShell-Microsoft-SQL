@@ -137,7 +137,7 @@ $SqlInfoCache = @{}
 function Fill-SqlInfoCache {
     param (
         [switch] $Force,
-        [string] $Timeout = 3600
+        [string] $Timeout = 1800
     )
 
     if (!$Force -and $Global:SqlInfoCache.Ts -and ((Get-Date) - $Global:SqlInfoCache.Ts).TotalMilliseconds -le [Int32]600000) {
@@ -520,7 +520,7 @@ function Idm-Dispatcher {
             foreach ($key in $keys_with_null_value) { $function_params[$key] = [System.DBNull]::Value }
 
             $sql_command = New-MsSqlCommand
-            $sql_command.CommandTimeout = $Timeout
+            $sql_command.CommandTimeout = if ($system_params.query_timeout) { $system_params.query_timeout } else { 1800 }
 
             $projection = if ($function_params['selected_columns'].count -eq 0) { '*' } else { @($function_params['selected_columns'] | ForEach-Object { "[$_]" }) -join ', ' }
 
@@ -749,7 +749,7 @@ function Invoke-MsSqlCommand {
                 $hash_table[$column_name] = ""
             }
 
-            $obj = New-Object -TypeName PSObject -Property $hash_table
+            $obj = [PSCustomObject]$hash_table
 
             # Read data
 			if($data_reader.HasRows) {
