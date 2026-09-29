@@ -1,5 +1,7 @@
 # Microsoft SQL Server
 
+Read the [Microsoft SQL Server integration documentation](https://docs.nimsuite.com/en/integrations/microsoft-sql-server) for connector details and related guides.
+
 <img src="https://github.com/Tools4ever-NIM/NIM-System-PowerShell-Microsoft-SQL/assets/24281600/a600f2ee-1db9-48ad-ad63-95bca563be52" width="256px" />
 
 
